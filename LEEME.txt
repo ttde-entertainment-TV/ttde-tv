@@ -1,0 +1,11 @@
+PASOS (una sola vez)
+1. Crea cuenta en github.com y un repositorio PUBLICO llamado: ttde-tv
+2. Sube todo el contenido de esta carpeta (Add file > Upload files; incluye la carpeta .github).
+3. En lib/main.dart cambia TU_USUARIO por tu usuario de GitHub.
+4. API key de YouTube (gratis): console.cloud.google.com > nuevo proyecto >
+   habilitar "YouTube Data API v3" > Credenciales > Crear clave de API.
+5. En GitHub: Settings > Secrets and variables > Actions > New secret
+   Nombre: YOUTUBE_API_KEY   Valor: tu clave.
+6. Pestana Actions > "Actualizar videos" > Run workflow (llena la lista; luego se actualiza sola cada 3 hs).
+7. Actions > "Compilar APK" > Run workflow. Al terminar, en Releases (columna derecha)
+   descargas app-release.apk e instalas en el celular o Android TV.
