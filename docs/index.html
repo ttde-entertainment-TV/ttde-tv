@@ -2,9 +2,17 @@
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>TTDE Entertainment TV</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#000000">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <style>
 html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,sans-serif}
+#stage{position:absolute;inset:0;overflow:hidden;background:#000}
+@media (orientation:portrait){#stage{inset:auto;top:0;left:100vw;left:100dvw;width:100vh;width:100dvh;height:100vw;height:100dvw;transform-origin:top left;transform:rotate(90deg)}}
 #p{position:absolute;inset:0;width:100%;height:100%}
+#v{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:none}
 #shield{position:absolute;inset:0;z-index:2}
 #logo{position:absolute;top:12px;right:16px;width:clamp(70px,10vw,140px);z-index:3;opacity:.85;pointer-events:none;display:none}
 #live{position:absolute;bottom:14px;left:16px;z-index:3;color:#fff;font-weight:700;font-size:13px;background:#c4161c;padding:3px 9px;border-radius:4px;display:none}
@@ -14,13 +22,14 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:syste
 #msg{color:#666;font-size:14px}
 </style></head><body>
 <div id="splash"><img src="splash.jpg" alt="TTDE Entertainment TV"><button id="go">▶ ENTRAR AL CANAL</button><div id="msg">Cargando programación…</div></div>
-<div id="p"></div><div id="shield"></div>
-<img id="logo" src="logo.png" alt=""><div id="live">● EN VIVO</div>
+<div id="stage"><div id="p"></div><video id="v" playsinline></video><div id="shield"></div>
+<img id="logo" src="logo.png" alt=""><div id="live">● EN VIVO</div></div>
 <script>
 const FEED="https://raw.githubusercontent.com/ttde-entertainment-TV/ttde-tv/main/assets/videos.json";
 let items=[],bad=new Set(),player=null,started=false,ready=false,lastSync=0;
 const $=id=>document.getElementById(id);
-function list(){return items.filter(v=>!bad.has(v.id))}
+function key(v){return v.id||v.src}
+function list(){return items.filter(v=>!bad.has(key(v)))}
 function at(now){const L=list(),tot=L.reduce((s,v)=>s+v.d,0);let t=(now/1000)%tot;
  for(let i=0;i<L.length;i++){if(t<L[i].d)return{v:L[i],off:Math.floor(t)};t-=L[i].d}return{v:L[0],off:0}}
 async function load(){
@@ -30,20 +39,30 @@ async function load(){
    if(started&&JSON.stringify(items)!==old)sync()}
   else $("msg").textContent="La programación aún no está disponible"}
  catch(e){$("msg").textContent="Sin conexión, reintentando…";setTimeout(load,15000)}}
-function sync(){if(!ready||!list().length)return;const a=at(Date.now());lastSync=Date.now();
- player.loadVideoById({videoId:a.v.id,startSeconds:a.off});player.unMute&&player.unMute()}
+function sync(){if(!ready||!list().length)return;const a=at(Date.now());lastSync=Date.now();const V=$("v");
+ if(a.v.src){try{player.pauseVideo()}catch(x){}$("p").style.display="none";V.style.display="block";
+  if(!V.src.endsWith(a.v.src))V.src=a.v.src;V.currentTime=a.off;V.muted=false;V.play().catch(()=>{})}
+ else{V.pause();V.style.display="none";$("p").style.display="block";
+  player.loadVideoById({videoId:a.v.id,startSeconds:a.off});player.unMute&&player.unMute()}}
+$("v").onended=()=>sync();
+$("v").onerror=()=>{const c=items.find(v=>v.src&&$("v").src.endsWith(v.src));if(c)bad.add(key(c));sync()};
 function onYouTubeIframeAPIReady(){window.apiOK=true}
 $("go").style.display="none";
 $("go").onclick=()=>{ if(!window.YT||!YT.Player||!items.length)return;
- started=true;$("splash").style.display="none";$("logo").style.display="block";$("live").style.display="block";
+ started=true;goFull();keepAwake();$("splash").style.display="none";$("logo").style.display="block";$("live").style.display="block";
  player=new YT.Player("p",{width:"100%",height:"100%",playerVars:{autoplay:1,controls:0,disablekb:1,rel:0,playsinline:1,fs:0,iv_load_policy:3,modestbranding:1},
   events:{onReady:()=>{ready=true;sync()},
    onStateChange:e=>{if(e.data===0)sync();if(e.data===2)player.playVideo()},
    onError:()=>{const id=player.getVideoData().video_id;if(id)bad.add(id);sync()}}})};
-setInterval(()=>{if(!ready||Date.now()-lastSync<8000)return;
- const a=at(Date.now()),cur=player.getVideoData().video_id,t=player.getCurrentTime();
+setInterval(()=>{if(!ready||Date.now()-lastSync<8000||!list().length)return;
+ const a=at(Date.now()),V=$("v");
+ if(a.v.src){if(!V.src.endsWith(a.v.src)||Math.abs(V.currentTime-a.off)>6||V.paused)sync();return}
+ const cur=player.getVideoData().video_id,t=player.getCurrentTime();
  if(cur!==a.v.id||Math.abs(t-a.off)>6)sync()},5000);
-document.addEventListener("visibilitychange",()=>{if(!document.hidden)sync()});
+function goFull(){try{const e=document.documentElement;if(e.requestFullscreen)e.requestFullscreen().then(()=>{if(screen.orientation&&screen.orientation.lock)screen.orientation.lock("landscape").catch(()=>{})}).catch(()=>{})}catch(x){}}
+let wl=null;async function keepAwake(){try{if(navigator.wakeLock)wl=await navigator.wakeLock.request("screen")}catch(x){}}
+if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden){keepAwake();sync()}});
 setInterval(load,3600000);load();
 </script>
 <script src="https://www.youtube.com/iframe_api"></script>

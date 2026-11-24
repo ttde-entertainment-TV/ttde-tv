@@ -1,0 +1,5 @@
+# Pega aca links de TUS videos de YouTube (uno por linea).
+# Tienen que estar publicos o no listados, con "permitir insertar" activado
+# y SIN monetizar (asi no muestran anuncios).
+# Ejemplo:
+# https://youtu.be/XXXXXXXXXXX
