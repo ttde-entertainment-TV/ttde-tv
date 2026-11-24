@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Panel TTDE TV</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;padding:18px;background:#111;color:#eee;max-width:640px;margin:auto}
+h1{color:#d4a017;font-size:22px}h2{font-size:17px;margin:26px 0 8px;color:#d4a017}
+textarea,input[type=password],input[type=file]{width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #444;background:#1c1c1c;color:#eee;font-size:15px}
+textarea{height:110px}
+button{margin-top:8px;padding:11px 20px;border:0;border-radius:8px;background:#b8860b;color:#fff;font-weight:700;font-size:15px}
+button.q{margin:0;padding:6px 12px;background:#7a1f1f;font-size:13px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #333;font-size:13px;word-break:break-all}
+#st{margin-top:18px;padding:10px;border-radius:8px;background:#222;font-size:14px;min-height:20px}
+small{color:#999}
+</style></head><body>
+<h1>Panel TTDE TV</h1>
+<div id="login">
+ <p>Pegá tu clave de acceso de GitHub (se guarda solo en este celu).</p>
+ <input type="password" id="tk" placeholder="ghp_...">
+ <button id="save">Entrar</button>
+</div>
+<div id="app" hidden>
+ <h2>Agregar videos de YouTube</h2>
+ <small>Tus videos de YouTube: públicos o no listados, con insertar activado y sin monetizar.</small>
+ <textarea id="links" placeholder="Un link por línea"></textarea>
+ <button id="addYt">Agregar al canal</button>
+ <h2>Subir un video (mp4 o webm, hasta 50 MB)</h2>
+ <input type="file" id="file" accept="video/mp4,video/webm">
+ <button id="up">Subir al canal</button>
+ <h2>Mis videos en el canal</h2>
+ <div id="list">Cargando…</div>
+ <p><button class="q" id="out">Salir</button></p>
+</div>
+<div id="st"></div>
+<script>
+const O="ttde-entertainment-TV",R="ttde-tv",API="https://api.github.com/repos/"+O+"/"+R+"/contents/";
+let T=localStorage.getItem("tk")||"";
+const $=id=>document.getElementById(id);
+const st=m=>$("st").textContent=m;
+async function gh(path,opt={}){
+ const r=await fetch(API+path,{...opt,headers:{Authorization:"Bearer "+T,Accept:"application/vnd.github+json","Content-Type":"application/json"}});
+ if(!r.ok&&r.status!==404)throw new Error(r.status+" "+(await r.text()).slice(0,140));
+ return r}
+const dec=b=>decodeURIComponent(escape(atob(b.replace(/\n/g,""))));
+const enc=t=>btoa(unescape(encodeURIComponent(t)));
+async function getTxt(){const r=await gh("mis_videos.txt");if(r.status===404)return{text:"",sha:undefined};const j=await r.json();return{text:dec(j.content),sha:j.sha}}
+async function putTxt(text,sha,msg){await gh("mis_videos.txt",{method:"PUT",body:JSON.stringify({message:msg,content:enc(text),sha})})}
+function ytId(l){const m=l.match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([\w-]{11})/)||l.match(/^([\w-]{11})$/);return m&&m[1]}
+async function refresh(){
+ try{
+  const {text}=await getTxt();const lines=text.split("\n").map(x=>x.trim()).filter(x=>x&&!x.startsWith("#"));
+  const fr=await gh("docs/videos");const files=fr.status===404?[]:(await fr.json()).filter(f=>f.name!==".gitkeep");
+  const box=$("list");box.innerHTML="";
+  if(!lines.length&&!files.length)box.textContent="Todavía no cargaste videos propios. El canal usa solo los automáticos.";
+  lines.forEach(l=>{const d=document.createElement("div");d.className="row";d.innerHTML="<span>▶ YouTube: "+l.replace(/</g,"&lt;")+"</span>";
+   const b=document.createElement("button");b.className="q";b.textContent="Quitar";b.onclick=()=>quitarLink(l);d.appendChild(b);box.appendChild(d)});
+  files.forEach(f=>{const d=document.createElement("div");d.className="row";d.innerHTML="<span>🎞 "+f.name.replace(/</g,"&lt;")+"</span>";
+   const b=document.createElement("button");b.className="q";b.textContent="Quitar";b.onclick=()=>quitarFile(f);d.appendChild(b);box.appendChild(d)});
+ }catch(e){st("Error: "+e.message)}}
+async function quitarLink(l){try{st("Quitando…");const {text,sha}=await getTxt();
+ const n=text.split("\n").filter(x=>x.trim()!==l).join("\n");await putTxt(n,sha,"panel: quitar video");st("Listo. Se actualiza en 2 o 3 minutos.");refresh()}catch(e){st("Error: "+e.message)}}
+async function quitarFile(f){try{st("Quitando…");await gh("docs/videos/"+encodeURIComponent(f.name),{method:"DELETE",body:JSON.stringify({message:"panel: quitar archivo",sha:f.sha})});st("Listo. Se actualiza en 2 o 3 minutos.");refresh()}catch(e){st("Error: "+e.message)}}
+$("addYt").onclick=async()=>{try{
+ const nuevos=$("links").value.split("\n").map(x=>x.trim()).filter(Boolean);
+ if(!nuevos.length)return st("Pegá al menos un link.");
+ const malos=nuevos.filter(l=>!ytId(l));if(malos.length)return st("Link no válido: "+malos[0]);
+ st("Agregando…");const {text,sha}=await getTxt();const ya=text.split("\n").map(x=>x.trim());
+ let out=text.trim()?text.replace(/\s+$/,"")+"\n":"";nuevos.forEach(l=>{if(!ya.includes(l))out+=l+"\n"});
+ await putTxt(out,sha,"panel: agregar videos");$("links").value="";st("Listo. En 2 o 3 minutos aparecen en el canal.");refresh()}catch(e){st("Error: "+e.message)}};
+$("up").onclick=async()=>{try{
+ const f=$("file").files[0];if(!f)return st("Elegí un video primero.");
+ if(f.size>50*1024*1024)return st("El video pesa más de 50 MB. Comprimilo o subilo a YouTube.");
+ st("Subiendo… puede tardar, no cierres la página.");
+ const b64=await new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(r.result.split(",")[1]);r.onerror=()=>no(new Error("No pude leer el archivo"));r.readAsDataURL(f)});
+ const name=f.name.normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^\w.-]+/g,"-");
+ let sha;const ex=await gh("docs/videos/"+name);if(ex.status===200)sha=(await ex.json()).sha;
+ await gh("docs/videos/"+name,{method:"PUT",body:JSON.stringify({message:"panel: subir "+name,content:b64,sha})});
+ $("file").value="";st("Listo. En 2 o 3 minutos aparece en el canal.");refresh()}catch(e){st("Error: "+e.message)}};
+$("save").onclick=async()=>{T=$("tk").value.trim();if(!T)return;
+ try{const r=await gh("mis_videos.txt");if(r.status===401||r.status===403)throw new Error("clave no válida");
+  localStorage.setItem("tk",T);$("tk").value="";start()}catch(e){st("Error: "+e.message)}};
+$("out").onclick=()=>{localStorage.removeItem("tk");T="";$("app").hidden=true;$("login").hidden=false;st("")};
+function start(){$("login").hidden=true;$("app").hidden=false;st("");refresh()}
+if(T)start();
+</script></body></html>
