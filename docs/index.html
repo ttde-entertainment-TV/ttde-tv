@@ -14,6 +14,10 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:syste
 #p{position:absolute;inset:0;width:100%;height:100%}
 #v{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:none}
 #shield{position:absolute;inset:0;z-index:2}
+#bar{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:4;display:flex;gap:10px;opacity:0;pointer-events:none;transition:opacity .2s}
+#bar.show{opacity:1;pointer-events:auto}
+#bar button{font-size:22px;padding:8px 16px;border:0;border-radius:30px;background:rgba(0,0,0,.7);color:#fff;cursor:pointer}
+#bar #bLive{font-size:14px;font-weight:700}
 #logo{position:absolute;top:12px;right:16px;width:clamp(70px,10vw,140px);z-index:3;opacity:.85;pointer-events:none;display:none}
 #live{position:absolute;bottom:14px;left:16px;z-index:3;color:#fff;font-weight:700;font-size:13px;background:#c4161c;padding:3px 9px;border-radius:4px;display:none}
 #splash{position:absolute;inset:0;z-index:5;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px}
@@ -23,10 +27,11 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:syste
 </style></head><body>
 <div id="splash"><img src="splash.jpg" alt="TTDE Entertainment TV"><button id="go">▶ ENTRAR AL CANAL</button><div id="msg">Cargando programación…</div></div>
 <div id="stage"><div id="p"></div><video id="v" playsinline></video><div id="shield"></div>
-<img id="logo" src="logo.png" alt=""><div id="live">● EN VIVO</div></div>
+<img id="logo" src="logo.png" alt=""><div id="live">● EN VIVO</div>
+<div id="bar"><button id="bPlay">⏸</button><button id="bNext">⏭</button><button id="bMute">🔊</button><button id="bLive">VOLVER AL VIVO</button></div></div>
 <script>
 const FEED="https://raw.githubusercontent.com/ttde-entertainment-TV/ttde-tv/main/assets/videos.json";
-let items=[],bad=new Set(),player=null,started=false,ready=false,lastSync=0;
+let items=[],bad=new Set(),player=null,started=false,ready=false,lastSync=0,shift=0,paused=false,muted=false,barT=null;
 const $=id=>document.getElementById(id);
 function key(v){return v.id||v.src}
 function list(){return items.filter(v=>!bad.has(key(v)))}
@@ -39,23 +44,24 @@ async function load(){
    if(started&&JSON.stringify(items)!==old)sync()}
   else $("msg").textContent="La programación aún no está disponible"}
  catch(e){$("msg").textContent="Sin conexión, reintentando…";setTimeout(load,15000)}}
-function sync(){if(!ready||!list().length)return;const a=at(Date.now());lastSync=Date.now();const V=$("v");
+function nowT(){return Date.now()+shift}
+function sync(){if(!ready||paused||!list().length)return;const a=at(nowT());lastSync=Date.now();const V=$("v");
  if(a.v.src){try{player.pauseVideo()}catch(x){}$("p").style.display="none";V.style.display="block";
-  if(!V.src.endsWith(a.v.src))V.src=a.v.src;V.currentTime=a.off;V.muted=false;V.play().catch(()=>{})}
+  if(!V.src.endsWith(a.v.src))V.src=a.v.src;V.currentTime=a.off;V.muted=muted;V.play().catch(()=>{})}
  else{V.pause();V.style.display="none";$("p").style.display="block";
-  player.loadVideoById({videoId:a.v.id,startSeconds:a.off});player.unMute&&player.unMute()}}
+  player.loadVideoById({videoId:a.v.id,startSeconds:a.off});muted?player.mute():player.unMute()}}
 $("v").onended=()=>sync();
 $("v").onerror=()=>{const c=items.find(v=>v.src&&$("v").src.endsWith(v.src));if(c)bad.add(key(c));sync()};
 function onYouTubeIframeAPIReady(){window.apiOK=true}
 $("go").style.display="none";
 $("go").onclick=()=>{ if(!window.YT||!YT.Player||!items.length)return;
- started=true;goFull();keepAwake();$("splash").style.display="none";$("logo").style.display="block";$("live").style.display="block";
+ started=true;goFull();keepAwake();showBar();$("splash").style.display="none";$("logo").style.display="block";$("live").style.display="block";
  player=new YT.Player("p",{width:"100%",height:"100%",playerVars:{autoplay:1,controls:0,disablekb:1,rel:0,playsinline:1,fs:0,iv_load_policy:3,modestbranding:1},
   events:{onReady:()=>{ready=true;sync()},
-   onStateChange:e=>{if(e.data===0)sync();if(e.data===2)player.playVideo()},
+   onStateChange:e=>{if(e.data===0)sync();if(e.data===2&&!paused)player.playVideo()},
    onError:()=>{const id=player.getVideoData().video_id;if(id)bad.add(id);sync()}}})};
-setInterval(()=>{if(!ready||Date.now()-lastSync<8000||!list().length)return;
- const a=at(Date.now()),V=$("v");
+setInterval(()=>{if(!ready||paused||Date.now()-lastSync<8000||!list().length)return;
+ const a=at(nowT()),V=$("v");
  if(a.v.src){if(!V.src.endsWith(a.v.src)||Math.abs(V.currentTime-a.off)>6||V.paused)sync();return}
  const cur=player.getVideoData().video_id,t=player.getCurrentTime();
  if(cur!==a.v.id||Math.abs(t-a.off)>6)sync()},5000);
@@ -63,6 +69,13 @@ function goFull(){try{const e=document.documentElement;if(e.requestFullscreen)e.
 let wl=null;async function keepAwake(){try{if(navigator.wakeLock)wl=await navigator.wakeLock.request("screen")}catch(x){}}
 if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden){keepAwake();sync()}});
+function showBar(){const b=$("bar");b.classList.add("show");clearTimeout(barT);barT=setTimeout(()=>b.classList.remove("show"),4000)}
+function badge(){const l=$("live");l.textContent=shift?"◐ DIFERIDO":"● EN VIVO";l.style.background=shift?"#555":"#c4161c"}
+$("shield").onclick=()=>{if(started)showBar()};
+$("bPlay").onclick=()=>{if(!ready)return;if(paused){paused=false;$("bPlay").textContent="⏸";sync()}else{paused=true;$("bPlay").textContent="▶";try{player.pauseVideo()}catch(x){}$("v").pause()}showBar()};
+$("bNext").onclick=()=>{if(!ready)return;paused=false;$("bPlay").textContent="⏸";const a=at(nowT());shift+=(a.v.d-a.off)*1000+500;badge();sync();showBar()};
+$("bMute").onclick=()=>{muted=!muted;$("bMute").textContent=muted?"🔇":"🔊";try{muted?player.mute():player.unMute()}catch(x){}$("v").muted=muted;showBar()};
+$("bLive").onclick=()=>{shift=0;paused=false;$("bPlay").textContent="⏸";badge();sync();showBar()};
 setInterval(load,3600000);load();
 </script>
 <script src="https://www.youtube.com/iframe_api"></script>

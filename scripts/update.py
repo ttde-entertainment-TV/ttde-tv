@@ -3,6 +3,13 @@ KEY = os.environ["YOUTUBE_API_KEY"]
 API = "https://www.googleapis.com/youtube/v3/"
 QUERIES = ["musica", "humor", "deportes", "viajes", "animales", "cocina", "tecnologia"]
 MIN_S, MAX_S = 10, 240
+REGIONS = ["AR", "MX", "ES"]
+NONLATIN = re.compile("[\u0370-\u1FFF\u3000-\uFFFF]")
+def es_ok(t):
+    lang = (t[2] or "").lower()
+    if lang:
+        return lang.startswith("es")
+    return not NONLATIN.search(t[3] or "")
 
 def get(path, **p):
     p["key"] = KEY
@@ -16,9 +23,11 @@ def dur(s):
 def details(ids):
     out = {}
     for i in range(0, len(ids), 50):
-        d = get("videos", part="contentDetails,status", id=",".join(ids[i:i+50]))
+        d = get("videos", part="contentDetails,status,snippet", id=",".join(ids[i:i+50]))
         for v in d.get("items", []):
-            out[v["id"]] = (dur(v["contentDetails"]["duration"]), v["status"].get("embeddable", False))
+            sn = v.get("snippet", {})
+            out[v["id"]] = (dur(v["contentDetails"]["duration"]), v["status"].get("embeddable", False),
+                            sn.get("defaultAudioLanguage") or sn.get("defaultLanguage") or "", sn.get("title", ""))
     return out
 
 # 1) Mis videos de YouTube (mis_videos.txt)
@@ -51,15 +60,15 @@ own += own_yt[len(own_files):] + own_files[len(own_yt):]
 # 3) Automaticos: YouTube con licencia Creative Commons
 auto, seen = [], set(i.get("id") for i in own)
 since = (datetime.datetime.utcnow() - datetime.timedelta(days=365)).strftime("%Y-%m-%dT00:00:00Z")
-for q in QUERIES:
+for qi, q in enumerate(QUERIES):
     try:
         r = get("search", part="id", type="video", videoLicense="creativeCommon",
                 videoEmbeddable="true", videoDuration="short", order="viewCount",
-                q=q, maxResults=50, relevanceLanguage="es", publishedAfter=since)
+                q=q, maxResults=50, relevanceLanguage="es", regionCode=REGIONS[qi % 3], publishedAfter=since)
         ids = [x["id"]["videoId"] for x in r.get("items", []) if x["id"]["videoId"] not in seen]
         det = details(ids)
         for i in ids:
-            if i in det and det[i][1] and MIN_S <= det[i][0] <= MAX_S:
+            if i in det and det[i][1] and MIN_S <= det[i][0] <= MAX_S and es_ok(det[i]):
                 seen.add(i); auto.append({"id": i, "d": det[i][0]})
     except Exception as e:
         print("busqueda fallo", q, e)
