@@ -1,7 +1,7 @@
 name: ttde_tv
 description: TTDE Entertainment TV - canal 24hs automatico
 publish_to: none
-version: 1.0.0+1
+version: 1.1.0+2
 environment:
   sdk: '>=3.3.0 <4.0.0'
 dependencies:
@@ -10,8 +10,17 @@ dependencies:
   http: ^1.2.0
   wakelock_plus: ^1.2.0
   youtube_player_iframe: ^6.0.2
+dev_dependencies:
+  flutter_launcher_icons: ^0.14.1
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/icon.png
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/icon.png
 flutter:
   uses-material-design: true
   assets:
     - assets/logo.jpg
+    - assets/logo_overlay.png
     - assets/videos.json

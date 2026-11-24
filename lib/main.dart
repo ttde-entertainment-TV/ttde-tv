@@ -7,7 +7,6 @@ import 'package:http/http.dart' as http;
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
-// CAMBIAR ttde-entertainment-TV por tu usuario de GitHub (repo: ttde-tv)
 const feedUrl =
     'https://raw.githubusercontent.com/ttde-entertainment-TV/ttde-tv/main/assets/videos.json';
 
@@ -26,7 +25,7 @@ class TV extends StatefulWidget {
   State<TV> createState() => _TVState();
 }
 
-class _TVState extends State<TV> {
+class _TVState extends State<TV> with WidgetsBindingObserver {
   late final YoutubePlayerController c;
   List<String> ids = [];
   int i = 0;
@@ -37,9 +36,11 @@ class _TVState extends State<TV> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     c = YoutubePlayerController(
         params: const YoutubePlayerParams(
-            origin: 'https://com.ttde.ttdetv', showControls: false,
+            origin: 'https://com.ttde.ttdetv',
+            showControls: false,
             showFullscreenButton: false,
             strictRelatedVideos: true));
     c.listen((v) {
@@ -47,12 +48,25 @@ class _TVState extends State<TV> {
     });
     _load();
     refresh = Timer.periodic(const Duration(hours: 1), (_) => _load(false));
-    // si se cuelga, salta al siguiente
     watchdog = Timer.periodic(const Duration(seconds: 20), (_) async {
       if (ids.isEmpty) return;
       final s = await c.playerState;
-      if (s == PlayerState.unStarted || s == PlayerState.unknown) _next();
+      if (s == PlayerState.unStarted ||
+          s == PlayerState.unknown ||
+          s == PlayerState.paused) {
+        _next();
+      }
     });
+  }
+
+  // si la app vuelve del fondo, sigue reproduciendo y con pantalla encendida
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      WakelockPlus.enable();
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      if (ids.isNotEmpty) c.playVideo();
+    }
   }
 
   Future<List<String>> _fetch() async {
@@ -94,6 +108,7 @@ class _TVState extends State<TV> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     refresh?.cancel();
     watchdog?.cancel();
     c.close();
@@ -102,17 +117,29 @@ class _TVState extends State<TV> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(fit: StackFit.expand, children: [
-        Center(child: YoutubePlayer(controller: c, aspectRatio: 16 / 9)),
-        if (!playing)
-          Container(
-              color: Colors.white,
-              child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Image.asset('assets/logo.jpg'))),
-      ]),
+    return PopScope(
+      canPop: false, // el boton atras no cierra el canal
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(fit: StackFit.expand, children: [
+          Center(child: YoutubePlayer(controller: c, aspectRatio: 16 / 9)),
+          if (playing)
+            Positioned(
+                top: 12,
+                right: 16,
+                child: IgnorePointer(
+                    child: Opacity(
+                        opacity: 0.85,
+                        child: Image.asset('assets/logo_overlay.png',
+                            width: 90)))),
+          if (!playing)
+            Container(
+                color: Colors.white,
+                child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Image.asset('assets/logo.jpg'))),
+        ]),
+      ),
     );
   }
 }

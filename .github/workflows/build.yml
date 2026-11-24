@@ -2,7 +2,7 @@ name: Compilar APK
 on:
   workflow_dispatch:
   push:
-    paths: ["lib/**", "pubspec.yaml", ".github/workflows/build.yml"]
+    paths: ["lib/**", "pubspec.yaml", "assets/icon.png", "assets/logo_overlay.png", "signing/**", ".github/workflows/build.yml"]
 permissions:
   contents: write
 jobs:
@@ -14,13 +14,32 @@ jobs:
         with: {distribution: temurin, java-version: "21"}
       - uses: subosito/flutter-action@v2
         with: {channel: stable}
+      - name: Firma fija (para poder actualizar sin desinstalar)
+        run: |
+          mkdir -p ~/.android
+          cp signing/debug.keystore ~/.android/debug.keystore
       - name: Generar proyecto Android
         run: |
           flutter create /tmp/scaf --platforms=android --project-name ttde_tv --org com.ttde
           cp -r /tmp/scaf/android ./android
           sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' android/app/src/main/AndroidManifest.xml
           sed -i 's#android:label="[^"]*"#android:label="TTDE TV"#' android/app/src/main/AndroidManifest.xml
+          mkdir -p android/app/src/main/kotlin/com/ttde/ttde_tv
+          cat > android/app/src/main/kotlin/com/ttde/ttde_tv/MainActivity.kt <<'KT'
+          package com.ttde.ttde_tv
+
+          import android.os.Bundle
+          import io.flutter.embedding.android.FlutterActivity
+
+          class MainActivity : FlutterActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  try { startLockTask() } catch (e: Exception) { }
+              }
+          }
+          KT
       - run: flutter pub get
+      - run: dart run flutter_launcher_icons
       - run: flutter build apk --release
       - uses: softprops/action-gh-release@v2
         with:
