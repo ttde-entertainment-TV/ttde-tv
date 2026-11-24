@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>TTDE Entertainment TV</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:system-ui,sans-serif}
+#p{position:absolute;inset:0;width:100%;height:100%}
+#shield{position:absolute;inset:0;z-index:2}
+#logo{position:absolute;top:12px;right:16px;width:clamp(70px,10vw,140px);z-index:3;opacity:.85;pointer-events:none;display:none}
+#live{position:absolute;bottom:14px;left:16px;z-index:3;color:#fff;font-weight:700;font-size:13px;background:#c4161c;padding:3px 9px;border-radius:4px;display:none}
+#splash{position:absolute;inset:0;z-index:5;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px}
+#splash img{max-width:70vw;max-height:55vh}
+#go{font-size:20px;font-weight:700;padding:14px 38px;border:0;border-radius:40px;background:#b8860b;color:#fff;cursor:pointer}
+#msg{color:#666;font-size:14px}
+</style></head><body>
+<div id="splash"><img src="splash.jpg" alt="TTDE Entertainment TV"><button id="go">▶ ENTRAR AL CANAL</button><div id="msg">Cargando programación…</div></div>
+<div id="p"></div><div id="shield"></div>
+<img id="logo" src="logo.png" alt=""><div id="live">● EN VIVO</div>
+<script>
+const FEED="https://raw.githubusercontent.com/ttde-entertainment-TV/ttde-tv/main/assets/videos.json";
+let items=[],bad=new Set(),player=null,started=false,ready=false,lastSync=0;
+const $=id=>document.getElementById(id);
+function list(){return items.filter(v=>!bad.has(v.id))}
+function at(now){const L=list(),tot=L.reduce((s,v)=>s+v.d,0);let t=(now/1000)%tot;
+ for(let i=0;i<L.length;i++){if(t<L[i].d)return{v:L[i],off:Math.floor(t)};t-=L[i].d}return{v:L[0],off:0}}
+async function load(){
+ try{const r=await fetch(FEED+"?t="+Math.floor(Date.now()/600000));const j=await r.json();
+  if(j.items&&j.items.length){const old=JSON.stringify(items);items=j.items;
+   $("msg").textContent="Listo";$("go").style.display="inline-block";
+   if(started&&JSON.stringify(items)!==old)sync()}
+  else $("msg").textContent="La programación aún no está disponible"}
+ catch(e){$("msg").textContent="Sin conexión, reintentando…";setTimeout(load,15000)}}
+function sync(){if(!ready||!list().length)return;const a=at(Date.now());lastSync=Date.now();
+ player.loadVideoById({videoId:a.v.id,startSeconds:a.off});player.unMute&&player.unMute()}
+function onYouTubeIframeAPIReady(){window.apiOK=true}
+$("go").style.display="none";
+$("go").onclick=()=>{ if(!window.YT||!YT.Player||!items.length)return;
+ started=true;$("splash").style.display="none";$("logo").style.display="block";$("live").style.display="block";
+ player=new YT.Player("p",{width:"100%",height:"100%",playerVars:{autoplay:1,controls:0,disablekb:1,rel:0,playsinline:1,fs:0,iv_load_policy:3,modestbranding:1},
+  events:{onReady:()=>{ready=true;sync()},
+   onStateChange:e=>{if(e.data===0)sync();if(e.data===2)player.playVideo()},
+   onError:()=>{const id=player.getVideoData().video_id;if(id)bad.add(id);sync()}}})};
+setInterval(()=>{if(!ready||Date.now()-lastSync<8000)return;
+ const a=at(Date.now()),cur=player.getVideoData().video_id,t=player.getCurrentTime();
+ if(cur!==a.v.id||Math.abs(t-a.off)>6)sync()},5000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)sync()});
+setInterval(load,3600000);load();
+</script>
+<script src="https://www.youtube.com/iframe_api"></script>
+</body></html>
