@@ -39,7 +39,7 @@ class _TVState extends State<TV> {
     super.initState();
     c = YoutubePlayerController(
         params: const YoutubePlayerParams(
-            showControls: false,
+            origin: 'https://com.ttde.ttdetv', showControls: false,
             showFullscreenButton: false,
             strictRelatedVideos: true));
     c.listen((v) {
