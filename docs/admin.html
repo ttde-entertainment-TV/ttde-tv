@@ -6,7 +6,7 @@
 <style>
 body{font-family:system-ui,sans-serif;margin:0;padding:18px;background:#111;color:#eee;max-width:640px;margin:auto}
 h1{color:#d4a017;font-size:22px}h2{font-size:17px;margin:26px 0 8px;color:#d4a017}
-textarea,input[type=password],input[type=file]{width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #444;background:#1c1c1c;color:#eee;font-size:15px}
+textarea,input[type=password],input[type=file],input[type=text]{width:100%;box-sizing:border-box;padding:10px;border-radius:8px;border:1px solid #444;background:#1c1c1c;color:#eee;font-size:15px}
 textarea{height:110px}
 button{margin-top:8px;padding:11px 20px;border:0;border-radius:8px;background:#b8860b;color:#fff;font-weight:700;font-size:15px}
 button.q{margin:0;padding:6px 12px;background:#7a1f1f;font-size:13px}
@@ -21,6 +21,10 @@ small{color:#999}
  <button id="save">Entrar</button>
 </div>
 <div id="app" hidden>
+ <h2>📡 Transmitir en vivo</h2>
+ <small>1) Empezá tu vivo en YouTube (app, botón +, En vivo). 2) Copiá el link del vivo y pegalo acá. Todos los que miran el canal lo ven.</small>
+ <input type="text" id="liveUrl" placeholder="https://youtube.com/live/...">
+ <button id="liveOn">Poner en el canal</button> <button class="q" id="liveOff">Terminar vivo</button>
  <h2>Agregar videos de YouTube</h2>
  <small>Tus videos de YouTube: públicos o no listados, con insertar activado y sin monetizar.</small>
  <textarea id="links" placeholder="Un link por línea"></textarea>
@@ -50,7 +54,7 @@ const dec=b=>decodeURIComponent(escape(atob(b.replace(/\n/g,""))));
 const enc=t=>btoa(unescape(encodeURIComponent(t)));
 async function getTxt(f="mis_videos.txt"){const r=await gh(f);if(r.status===404)return{text:"",sha:undefined};const j=await r.json();return{text:dec(j.content),sha:j.sha}}
 async function putTxt(text,sha,msg,f="mis_videos.txt"){await gh(f,{method:"PUT",body:JSON.stringify({message:msg,content:enc(text),sha})})}
-function ytId(l){const m=l.match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([\w-]{11})/)||l.match(/^([\w-]{11})$/);return m&&m[1]}
+function ytId(l){const m=l.match(/(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([\w-]{11})/)||l.match(/^([\w-]{11})$/);return m&&m[1]}
 async function refresh(){
  try{
   const {text}=await getTxt();const lines=text.split("\n").map(x=>x.trim()).filter(x=>x&&!x.startsWith("#"));
@@ -72,6 +76,14 @@ $("addYt").onclick=async()=>{try{
  st("Agregando…");const {text,sha}=await getTxt();const ya=text.split("\n").map(x=>x.trim());
  let out=text.trim()?text.replace(/\s+$/,"")+"\n":"";nuevos.forEach(l=>{if(!ya.includes(l))out+=l+"\n"});
  await putTxt(out,sha,"panel: agregar videos");$("links").value="";st("Listo. En 2 o 3 minutos aparecen en el canal.");refresh()}catch(e){st("Error: "+e.message)}};
+async function setLive(on){try{
+ const url=$("liveUrl").value.trim();let id=null;
+ if(on){id=ytId(url);if(!id)return st("Link no válido.")}
+ st(on?"Poniendo el vivo…":"Terminando…");
+ const r=await gh("en_vivo.json");const sha=r.status===200?(await r.json()).sha:undefined;
+ await gh("en_vivo.json",{method:"PUT",body:JSON.stringify({message:"panel: vivo "+(on?"on":"off"),content:enc(JSON.stringify({active:on,id:id,updated:new Date().toISOString()})),sha})});
+ st(on?"Listo. En menos de 1 minuto todos ven tu vivo en el canal.":"Listo. El canal vuelve a la programación.")}catch(e){st("Error: "+e.message)}}
+$("liveOn").onclick=()=>setLive(true);$("liveOff").onclick=()=>setLive(false);
 $("blkBtn").onclick=async()=>{try{
  const n=$("blk").value.split("\n").map(x=>x.trim()).filter(Boolean);
  if(!n.length)return st("Pegá al menos un link.");

@@ -41,7 +41,8 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:syste
 <script>
 const FEED="https://raw.githubusercontent.com/ttde-entertainment-TV/ttde-tv/main/assets/videos.json";
 const YT_KEY="PEGAR_CLAVE";
-let extra=null,all=[],chans=[],cur="todo",items=[],bad=new Set(),player=null,started=false,ready=false,lastSync=0,stuck=0,hid=0,shift=0,paused=false,muted=false,barT=null;
+const LIVE="https://raw.githubusercontent.com/ttde-entertainment-TV/ttde-tv/main/en_vivo.json";
+let extra=null,all=[],chans=[],cur="todo",items=[],bad=new Set(),player=null,started=false,ready=false,lastSync=0,stuck=0,hid=0,liveId=null,liveSkip=false,shift=0,paused=false,muted=false,barT=null;
 const $=id=>document.getElementById(id);
 function key(v){return v.id||v.src}
 function list(){return items.filter(v=>!bad.has(key(v)))}
@@ -57,7 +58,7 @@ async function load(){
 function active(){if(cur==="busqueda"&&extra)return extra.items;if(cur!=="todo"){const c=chans.find(x=>x.id===cur);if(c&&c.items.length)return c.items}cur="todo";return all}
 function norm(s){return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim()}
 function renderChips(){const box=$("chips");box.innerHTML="";[{id:"todo",name:"Todo"}].concat(chans).concat(extra?[{id:"busqueda",name:"🔎 "+extra.name}]:[]).forEach(c=>{const b=document.createElement("button");b.className="chip"+(c.id===cur?" on":"");b.textContent=c.name;b.onclick=()=>{setChan(c.id);$("qm").textContent=c.id==="todo"?"":"Mostrando: "+c.name};box.appendChild(b)})}
-function setChan(id){cur=id;items=active();shift=0;paused=false;$("bPlay").textContent="⏸";badge();renderChips();sync();showBar()}
+function setChan(id){liveSkip=true;cur=id;items=active();shift=0;paused=false;$("bPlay").textContent="⏸";badge();renderChips();sync();showBar()}
 function doSearch(){const q=norm($("q").value);
  if(!q||["musica","todo","todos","videos","canal"].includes(q)){setChan("todo");$("qm").textContent="";return}
  const c=chans.find(c=>norm(c.name).includes(q)||c.kw.some(k=>norm(k).includes(q)||q.includes(norm(k))));
@@ -86,7 +87,10 @@ async function freeSearch(raw){const qm=$("qm");
  }catch(e){qm.textContent="No pude buscar ahora."}}
 $("q").addEventListener("keydown",e=>{if(e.key==="Enter"){doSearch();$("q").blur()}});
 function nowT(){return Date.now()+shift}
-function sync(){if(!ready||paused||!list().length)return;const a=at(nowT());lastSync=Date.now();const V=$("v");
+function sync(){if(!ready||paused||(!list().length&&!liveId))return;
+ if(liveId&&!liveSkip){lastSync=Date.now();const V0=$("v");V0.pause();V0.style.display="none";$("p").style.display="block";
+  player.loadVideoById({videoId:liveId});muted?player.mute():player.unMute();return}
+ if(!list().length)return;const a=at(nowT());lastSync=Date.now();const V=$("v");
  if(a.v.src){try{player.pauseVideo()}catch(x){}$("p").style.display="none";V.style.display="block";
   if(!V.src.endsWith(a.v.src))V.src=a.v.src;V.currentTime=a.off;V.muted=muted;V.play().catch(()=>{})}
  else{V.pause();V.style.display="none";$("p").style.display="block";
@@ -99,11 +103,11 @@ $("go").onclick=()=>{ if(!window.YT||!YT.Player||!items.length)return;
  started=true;goFull();keepAwake();showBar();$("splash").style.display="none";$("logo").style.display="block";$("live").style.display="block";
  player=new YT.Player("p",{width:"100%",height:"100%",playerVars:{autoplay:1,controls:0,disablekb:1,rel:0,playsinline:1,fs:0,iv_load_policy:3,modestbranding:1},
   events:{onReady:()=>{ready=true;sync()},
-   onStateChange:e=>{if(e.data===0&&Date.now()-lastSync>3000)sync();if(e.data===2&&!paused)player.playVideo()},
+   onStateChange:e=>{if(e.data===0&&Date.now()-lastSync>3000){if(liveId&&!liveSkip){liveSkip=true;badge()}sync()}if(e.data===2&&!paused)player.playVideo()},
    onError:()=>{const id=player.getVideoData().video_id;if(id)bad.add(id);sync()}}})};
-setInterval(()=>{if(!ready||paused||!list().length)return;
- const a=at(nowT()),V=$("v");
- if(a.v.src){if(Date.now()-lastSync>8000&&(!V.src.endsWith(a.v.src)||Math.abs(V.currentTime-a.off)>6||V.paused))sync();return}
+setInterval(()=>{if(!ready||paused)return;
+ if(!(liveId&&!liveSkip)){if(!list().length)return;const a=at(nowT()),V=$("v");
+  if(a.v.src){if(Date.now()-lastSync>8000&&(!V.src.endsWith(a.v.src)||Math.abs(V.currentTime-a.off)>6||V.paused))sync();return}}
  /* YouTube: sin correccion de tiempo (con anuncios provocaba recargas). Solo se reinicia si se traba mucho. */
  let st=-2;try{st=player.getPlayerState()}catch(x){}
  if(st===-1||st===3||st===5)stuck++;else stuck=0;
@@ -113,16 +117,23 @@ let wl=null;async function keepAwake(){try{if(navigator.wakeLock)wl=await naviga
 if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 document.addEventListener("visibilitychange",()=>{if(document.hidden){hid=Date.now()}else{keepAwake();if(Date.now()-hid>30000)sync()}});
 function showBar(){["bar","top"].forEach(i=>$(i).classList.add("show"));clearTimeout(barT);barT=setTimeout(()=>{if(document.activeElement!==$("q"))["bar","top"].forEach(i=>$(i).classList.remove("show"))},5000)}
-function badge(){const l=$("live");l.textContent=shift?"◐ DIFERIDO · tocá para volver al vivo":"● EN VIVO";l.style.background=shift?"#555":"#c4161c"}
+function badge(){const l=$("live");
+ if(liveId&&!liveSkip){l.textContent="● EN DIRECTO";l.style.background="#c4161c"}
+ else if(liveId){l.textContent="◐ HAY UN VIVO · tocá para verlo";l.style.background="#b8860b"}
+ else{l.textContent=shift?"◐ DIFERIDO · tocá para volver al vivo":"● EN VIVO";l.style.background=shift?"#555":"#c4161c"}}
+async function pollLive(){let nid=null;
+ try{const r=await fetch(LIVE+"?t="+Date.now());if(r.ok){const j=await r.json();if(j.active&&j.id)nid=j.id}}catch(e){return}
+ if(nid!==liveId){liveId=nid;liveSkip=false;badge();if(started)sync()}}
 $("shield").onclick=()=>{if(started)showBar()};
 $("bPlay").onclick=()=>{if(!ready)return;if(paused){paused=false;$("bPlay").textContent="⏸";sync()}else{paused=true;$("bPlay").textContent="▶";try{player.pauseVideo()}catch(x){}$("v").pause()}showBar()};
-$("bPrev").onclick=()=>{if(!ready)return;paused=false;$("bPlay").textContent="⏸";const L=list(),a=at(nowT()),p=L[(a.i-1+L.length)%L.length];shift-=(a.off+p.d)*1000;badge();sync();showBar()};
-$("bNext").onclick=()=>{if(!ready)return;paused=false;$("bPlay").textContent="⏸";const a=at(nowT());shift+=(a.v.d-a.off)*1000+500;badge();sync();showBar()};
+$("bPrev").onclick=()=>{if(!ready)return;liveSkip=true;paused=false;$("bPlay").textContent="⏸";const L=list(),a=at(nowT()),p=L[(a.i-1+L.length)%L.length];shift-=(a.off+p.d)*1000;badge();sync();showBar()};
+$("bNext").onclick=()=>{if(!ready)return;liveSkip=true;paused=false;$("bPlay").textContent="⏸";const a=at(nowT());shift+=(a.v.d-a.off)*1000+500;badge();sync();showBar()};
 $("bMute").onclick=()=>{muted=!muted;$("bMute").textContent=muted?"🔇":"🔊";try{muted?player.mute():player.unMute()}catch(x){}$("v").muted=muted;showBar()};
 $("bBlock").onclick=()=>{const id=at(nowT()).v.id;if(id)window.open("admin.html#block="+id,"_blank");showBar()};
-function goLive(){shift=0;paused=false;$("bPlay").textContent="⏸";badge();sync();showBar()}
+function goLive(){shift=0;paused=false;liveSkip=false;$("bPlay").textContent="⏸";badge();sync();showBar()}
 $("bLive").onclick=goLive;$("live").onclick=goLive;
 setInterval(load,3600000);load();
+setInterval(pollLive,30000);pollLive();
 </script>
 <script src="https://www.youtube.com/iframe_api"></script>
 </body></html>
