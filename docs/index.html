@@ -41,7 +41,7 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:syste
 <script>
 const FEED="https://raw.githubusercontent.com/ttde-entertainment-TV/ttde-tv/main/assets/videos.json";
 const YT_KEY="PEGAR_CLAVE";
-let extra=null,all=[],chans=[],cur="todo",items=[],bad=new Set(),player=null,started=false,ready=false,lastSync=0,shift=0,paused=false,muted=false,barT=null;
+let extra=null,all=[],chans=[],cur="todo",items=[],bad=new Set(),player=null,started=false,ready=false,lastSync=0,stuck=0,hid=0,shift=0,paused=false,muted=false,barT=null;
 const $=id=>document.getElementById(id);
 function key(v){return v.id||v.src}
 function list(){return items.filter(v=>!bad.has(key(v)))}
@@ -99,17 +99,19 @@ $("go").onclick=()=>{ if(!window.YT||!YT.Player||!items.length)return;
  started=true;goFull();keepAwake();showBar();$("splash").style.display="none";$("logo").style.display="block";$("live").style.display="block";
  player=new YT.Player("p",{width:"100%",height:"100%",playerVars:{autoplay:1,controls:0,disablekb:1,rel:0,playsinline:1,fs:0,iv_load_policy:3,modestbranding:1},
   events:{onReady:()=>{ready=true;sync()},
-   onStateChange:e=>{if(e.data===0)sync();if(e.data===2&&!paused)player.playVideo()},
+   onStateChange:e=>{if(e.data===0&&Date.now()-lastSync>3000)sync();if(e.data===2&&!paused)player.playVideo()},
    onError:()=>{const id=player.getVideoData().video_id;if(id)bad.add(id);sync()}}})};
-setInterval(()=>{if(!ready||paused||Date.now()-lastSync<8000||!list().length)return;
+setInterval(()=>{if(!ready||paused||!list().length)return;
  const a=at(nowT()),V=$("v");
- if(a.v.src){if(!V.src.endsWith(a.v.src)||Math.abs(V.currentTime-a.off)>6||V.paused)sync();return}
- const cur=player.getVideoData().video_id,t=player.getCurrentTime();
- if(cur!==a.v.id||Math.abs(t-a.off)>6)sync()},5000);
+ if(a.v.src){if(Date.now()-lastSync>8000&&(!V.src.endsWith(a.v.src)||Math.abs(V.currentTime-a.off)>6||V.paused))sync();return}
+ /* YouTube: sin correccion de tiempo (con anuncios provocaba recargas). Solo se reinicia si se traba mucho. */
+ let st=-2;try{st=player.getPlayerState()}catch(x){}
+ if(st===-1||st===3||st===5)stuck++;else stuck=0;
+ if(stuck>=8&&Date.now()-lastSync>60000){stuck=0;sync()}},5000);
 function goFull(){try{const e=document.documentElement;if(e.requestFullscreen)e.requestFullscreen().then(()=>{if(screen.orientation&&screen.orientation.lock)screen.orientation.lock("landscape").catch(()=>{})}).catch(()=>{})}catch(x){}}
 let wl=null;async function keepAwake(){try{if(navigator.wakeLock)wl=await navigator.wakeLock.request("screen")}catch(x){}}
 if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
-document.addEventListener("visibilitychange",()=>{if(!document.hidden){keepAwake();sync()}});
+document.addEventListener("visibilitychange",()=>{if(document.hidden){hid=Date.now()}else{keepAwake();if(Date.now()-hid>30000)sync()}});
 function showBar(){["bar","top"].forEach(i=>$(i).classList.add("show"));clearTimeout(barT);barT=setTimeout(()=>{if(document.activeElement!==$("q"))["bar","top"].forEach(i=>$(i).classList.remove("show"))},5000)}
 function badge(){const l=$("live");l.textContent=shift?"◐ DIFERIDO · tocá para volver al vivo":"● EN VIVO";l.style.background=shift?"#555":"#c4161c"}
 $("shield").onclick=()=>{if(started)showBar()};
