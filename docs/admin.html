@@ -25,6 +25,11 @@ small{color:#999}
  <small>1) Empezá tu vivo en YouTube (app, botón +, En vivo). 2) Copiá el link del vivo y pegalo acá. Todos los que miran el canal lo ven.</small>
  <input type="text" id="liveUrl" placeholder="https://youtube.com/live/...">
  <button id="liveOn">Poner en el canal</button> <button class="q" id="liveOff">Terminar vivo</button>
+ <h2>📷 Transmitir con la cámara</h2>
+ <small>Hasta 8 espectadores a la vez. Dejá esta página abierta y la pantalla encendida mientras transmitís.</small>
+ <video id="pv" muted playsinline autoplay style="width:100%;margin-top:8px;border-radius:8px;background:#000;display:none"></video>
+ <select id="camFace" style="width:100%;padding:10px;margin-top:8px;border-radius:8px;background:#1c1c1c;color:#eee;border:1px solid #444;font-size:15px"><option value="environment">Cámara trasera</option><option value="user">Cámara frontal</option></select>
+ <button id="camOn">Empezar a transmitir</button> <button class="q" id="camOff">Terminar</button>
  <h2>Agregar videos de YouTube</h2>
  <small>Tus videos de YouTube: públicos o no listados, con insertar activado y sin monetizar.</small>
  <textarea id="links" placeholder="Un link por línea"></textarea>
@@ -76,6 +81,34 @@ $("addYt").onclick=async()=>{try{
  st("Agregando…");const {text,sha}=await getTxt();const ya=text.split("\n").map(x=>x.trim());
  let out=text.trim()?text.replace(/\s+$/,"")+"\n":"";nuevos.forEach(l=>{if(!ya.includes(l))out+=l+"\n"});
  await putTxt(out,sha,"panel: agregar videos");$("links").value="";st("Listo. En 2 o 3 minutos aparecen en el canal.");refresh()}catch(e){st("Error: "+e.message)}};
+const ICE=[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:global.stun.twilio.com:3478"},{urls:"turn:openrelay.metered.ca:80",username:"openrelayproject",credential:"openrelayproject"},{urls:"turn:openrelay.metered.ca:443",username:"openrelayproject",credential:"openrelayproject"},{urls:"turn:openrelay.metered.ca:443?transport=tcp",username:"openrelayproject",credential:"openrelayproject"}];
+let cs=null,cp=null,wl=null;const viewers=new Set();
+async function writeLive(obj){const r=await gh("en_vivo.json");const sha=r.status===200?(await r.json()).sha:undefined;
+ await gh("en_vivo.json",{method:"PUT",body:JSON.stringify({message:"panel: vivo",content:enc(JSON.stringify(Object.assign({updated:new Date().toISOString()},obj))),sha})})}
+function camMsg(){st("EN VIVO con la cámara. Espectadores: "+viewers.size+" (máx. 8). No cierres esta página.")}
+async function camStart(){try{
+ if(cp)return st("Ya estás transmitiendo.");
+ if(typeof Peer==="undefined")return st("No cargó la herramienta de video. Recargá la página.");
+ st("Pidiendo permiso de cámara y micrófono…");
+ cs=await navigator.mediaDevices.getUserMedia({video:{facingMode:$("camFace").value,width:{ideal:1280},height:{ideal:720}},audio:true});
+ $("pv").srcObject=cs;$("pv").style.display="block";
+ try{if(navigator.wakeLock)wl=await navigator.wakeLock.request("screen")}catch(x){}
+ const pid="ttde-"+Math.random().toString(36).slice(2,10);
+ cp=new Peer(pid,{config:{iceServers:ICE}});
+ cp.on("open",async()=>{try{await writeLive({active:true,mode:"cam",peer:pid});camMsg()}catch(e){st("Error: "+e.message)}});
+ cp.on("connection",conn=>{conn.on("open",()=>{
+  if(viewers.size>=8){conn.send("full");setTimeout(()=>conn.close(),500);return}
+  viewers.add(conn.peer);const call=cp.call(conn.peer,cs);
+  const off=()=>{viewers.delete(conn.peer);camMsg()};call.on("close",off);conn.on("close",off);camMsg()})});
+ cp.on("error",e=>st("Error de conexión: "+(e.type||e)));
+}catch(e){st("No pude abrir la cámara: "+e.message)}}
+async function camStop(){try{
+ if(cs){cs.getTracks().forEach(t=>t.stop());cs=null}
+ if(cp){cp.destroy();cp=null}
+ try{wl&&wl.release()}catch(x){}
+ $("pv").srcObject=null;$("pv").style.display="none";viewers.clear();
+ await writeLive({active:false});st("Listo. El canal vuelve a la programación.")}catch(e){st("Error: "+e.message)}}
+$("camOn").onclick=camStart;$("camOff").onclick=camStop;
 async function setLive(on){try{
  const url=$("liveUrl").value.trim();let id=null;
  if(on){id=ytId(url);if(!id)return st("Link no válido.")}
@@ -107,4 +140,5 @@ $("save").onclick=async()=>{T=$("tk").value.trim();if(!T)return;
 $("out").onclick=()=>{localStorage.removeItem("tk");T="";$("app").hidden=true;$("login").hidden=false;st("")};
 function start(){$("login").hidden=true;$("app").hidden=false;st("");refresh()}
 if(T)start();
-</script></body></html>
+</script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script></body></html>

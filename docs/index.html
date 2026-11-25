@@ -12,6 +12,8 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:syste
 #stage{position:absolute;inset:0;overflow:hidden;background:#000}
 @media (orientation:portrait){#stage{inset:auto;top:0;left:100vw;left:100dvw;width:100vh;width:100dvh;height:100vw;height:100dvw;transform-origin:top left;transform:rotate(90deg)}}
 #p{position:absolute;inset:0;width:100%;height:100%}
+#cam{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:none}
+#toast{position:absolute;top:60px;left:50%;transform:translateX(-50%);z-index:6;background:rgba(0,0,0,.75);color:#fff;padding:8px 16px;border-radius:20px;font-size:14px;display:none}
 #v{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:none}
 #shield{position:absolute;inset:0;z-index:2}
 #top{position:absolute;top:10px;left:10px;right:170px;z-index:4;opacity:0;pointer-events:none;transition:opacity .2s}
@@ -34,15 +36,17 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:syste
 #msg{color:#666;font-size:14px}
 </style></head><body>
 <div id="splash"><img src="splash.jpg" alt="TTDE Entertainment TV"><button id="go">▶ ENTRAR AL CANAL</button><div id="msg">Cargando programación…</div></div>
-<div id="stage"><div id="p"></div><video id="v" playsinline></video><div id="shield"></div>
+<div id="stage"><div id="p"></div><video id="v" playsinline></video><video id="cam" playsinline autoplay></video><div id="shield"></div>
 <img id="logo" src="logo.png" alt=""><div id="live">● EN VIVO</div>
 <div id="top"><input id="q" placeholder="🔎 Buscar: estudiar, relax, reggaeton…" enterkeyhint="search"><label id="ccl"><input type="checkbox" id="cc"> Solo licencia libre (menos anuncios)</label><div id="qm"></div><div id="chips"></div></div>
+<div id="toast"></div>
 <div id="bar"><button id="bPrev">⏮</button><button id="bPlay">⏸</button><button id="bNext">⏭</button><button id="bMute">🔊</button><button id="bBlock">⛔</button><button id="bLive">VOLVER AL VIVO</button></div></div>
 <script>
 const FEED="https://raw.githubusercontent.com/ttde-entertainment-TV/ttde-tv/main/assets/videos.json";
 const YT_KEY="PEGAR_CLAVE";
+const ICE=[{urls:"stun:stun.l.google.com:19302"},{urls:"stun:global.stun.twilio.com:3478"},{urls:"turn:openrelay.metered.ca:80",username:"openrelayproject",credential:"openrelayproject"},{urls:"turn:openrelay.metered.ca:443",username:"openrelayproject",credential:"openrelayproject"},{urls:"turn:openrelay.metered.ca:443?transport=tcp",username:"openrelayproject",credential:"openrelayproject"}];
 const LIVE="https://raw.githubusercontent.com/ttde-entertainment-TV/ttde-tv/main/en_vivo.json";
-let extra=null,all=[],chans=[],cur="todo",items=[],bad=new Set(),player=null,started=false,ready=false,lastSync=0,stuck=0,hid=0,liveId=null,liveSkip=false,shift=0,paused=false,muted=false,barT=null;
+let extra=null,all=[],chans=[],cur="todo",items=[],bad=new Set(),player=null,started=false,ready=false,lastSync=0,stuck=0,hid=0,liveId=null,liveInfo=null,camPeer=null,camPeerId=null,liveSkip=false,shift=0,paused=false,muted=false,barT=null;
 const $=id=>document.getElementById(id);
 function key(v){return v.id||v.src}
 function list(){return items.filter(v=>!bad.has(key(v)))}
@@ -88,8 +92,11 @@ async function freeSearch(raw){const qm=$("qm");
 $("q").addEventListener("keydown",e=>{if(e.key==="Enter"){doSearch();$("q").blur()}});
 function nowT(){return Date.now()+shift}
 function sync(){if(!ready||paused||(!list().length&&!liveId))return;
- if(liveId&&!liveSkip){lastSync=Date.now();const V0=$("v");V0.pause();V0.style.display="none";$("p").style.display="block";
-  player.loadVideoById({videoId:liveId});muted?player.mute():player.unMute();return}
+ if(liveId&&!liveSkip){lastSync=Date.now();
+  if(liveInfo&&liveInfo.type==="cam"){showCam(liveInfo.peer);return}
+  stopCam();const V0=$("v");V0.pause();V0.style.display="none";$("p").style.display="block";
+  player.loadVideoById({videoId:liveInfo.id});muted?player.mute():player.unMute();return}
+ stopCam();
  if(!list().length)return;const a=at(nowT());lastSync=Date.now();const V=$("v");
  if(a.v.src){try{player.pauseVideo()}catch(x){}$("p").style.display="none";V.style.display="block";
   if(!V.src.endsWith(a.v.src))V.src=a.v.src;V.currentTime=a.off;V.muted=muted;V.play().catch(()=>{})}
@@ -105,7 +112,7 @@ $("go").onclick=()=>{ if(!window.YT||!YT.Player||!items.length)return;
   events:{onReady:()=>{ready=true;sync()},
    onStateChange:e=>{if(e.data===0&&Date.now()-lastSync>3000){if(liveId&&!liveSkip){liveSkip=true;badge()}sync()}if(e.data===2&&!paused)player.playVideo()},
    onError:()=>{const id=player.getVideoData().video_id;if(id)bad.add(id);sync()}}})};
-setInterval(()=>{if(!ready||paused)return;
+setInterval(()=>{if(!ready||paused||(liveId&&!liveSkip&&liveInfo&&liveInfo.type==="cam"))return;
  if(!(liveId&&!liveSkip)){if(!list().length)return;const a=at(nowT()),V=$("v");
   if(a.v.src){if(Date.now()-lastSync>8000&&(!V.src.endsWith(a.v.src)||Math.abs(V.currentTime-a.off)>6||V.paused))sync();return}}
  /* YouTube: sin correccion de tiempo (con anuncios provocaba recargas). Solo se reinicia si se traba mucho. */
@@ -121,9 +128,29 @@ function badge(){const l=$("live");
  if(liveId&&!liveSkip){l.textContent="● EN DIRECTO";l.style.background="#c4161c"}
  else if(liveId){l.textContent="◐ HAY UN VIVO · tocá para verlo";l.style.background="#b8860b"}
  else{l.textContent=shift?"◐ DIFERIDO · tocá para volver al vivo":"● EN VIVO";l.style.background=shift?"#555":"#c4161c"}}
-async function pollLive(){let nid=null;
- try{const r=await fetch(LIVE+"?t="+Date.now());if(r.ok){const j=await r.json();if(j.active&&j.id)nid=j.id}}catch(e){return}
- if(nid!==liveId){liveId=nid;liveSkip=false;badge();if(started)sync()}}
+async function pollLive(){let nk=null,ni=null;
+ try{const r=await fetch(LIVE+"?t="+Date.now());if(r.ok){const j=await r.json();
+  if(j.active&&j.mode==="cam"&&j.peer){nk="cam:"+j.peer;ni={type:"cam",peer:j.peer}}
+  else if(j.active&&j.id){nk="yt:"+j.id;ni={type:"yt",id:j.id}}}}catch(e){return}
+ if(nk!==liveId){liveId=nk;liveInfo=ni;liveSkip=false;badge();if(started)sync()}}
+function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(t._t);t._t=setTimeout(()=>t.style.display="none",5000)}
+function stopCam(){try{camPeer&&camPeer.destroy()}catch(x){}camPeer=null;camPeerId=null;const c=$("cam");c.srcObject=null;c.style.display="none"}
+function showCam(pid){
+ try{player.stopVideo()}catch(x){}
+ $("p").style.display="none";$("v").pause();$("v").style.display="none";
+ const c=$("cam");c.style.display="block";c.muted=muted;
+ if(camPeerId===pid&&camPeer)return;
+ try{camPeer&&camPeer.destroy()}catch(x){}
+ const fail=m=>{toast(m);liveSkip=true;badge();sync()};
+ if(typeof Peer==="undefined"){return fail("No se pudo cargar el vivo.")}
+ camPeerId=pid;const peer=new Peer({config:{iceServers:ICE}});camPeer=peer;
+ peer.on("error",()=>{if(camPeer===peer)fail("No se pudo conectar al vivo.")});
+ peer.on("open",()=>{const conn=peer.connect(pid,{reliable:true});
+  conn.on("data",d=>{if(d==="full"&&camPeer===peer)fail("El vivo está lleno por ahora.")});
+  setTimeout(()=>{if(camPeer===peer&&!c.srcObject)fail("No se pudo conectar al vivo.")},20000)});
+ peer.on("call",call=>{call.answer();
+  call.on("stream",s=>{c.srcObject=s;c.play().catch(()=>{})});
+  call.on("close",()=>{if(camPeer===peer){toast("El vivo terminó.");liveSkip=true;badge();sync()}})})}
 $("shield").onclick=()=>{if(started)showBar()};
 $("bPlay").onclick=()=>{if(!ready)return;if(paused){paused=false;$("bPlay").textContent="⏸";sync()}else{paused=true;$("bPlay").textContent="▶";try{player.pauseVideo()}catch(x){}$("v").pause()}showBar()};
 $("bPrev").onclick=()=>{if(!ready)return;liveSkip=true;paused=false;$("bPlay").textContent="⏸";const L=list(),a=at(nowT()),p=L[(a.i-1+L.length)%L.length];shift-=(a.off+p.d)*1000;badge();sync();showBar()};
@@ -135,5 +162,6 @@ $("bLive").onclick=goLive;$("live").onclick=goLive;
 setInterval(load,3600000);load();
 setInterval(pollLive,30000);pollLive();
 </script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script src="https://www.youtube.com/iframe_api"></script>
 </body></html>
