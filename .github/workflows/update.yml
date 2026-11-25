@@ -1,9 +1,9 @@
 name: Actualizar videos
 on:
-  schedule: [{cron: "0 */3 * * *"}]
+  schedule: [{cron: "0 */6 * * *"}]
   workflow_dispatch:
   push:
-    paths: ["mis_videos.txt", "docs/videos/**"]
+    paths: ["mis_videos.txt", "bloqueados.txt", "docs/videos/**"]
 permissions:
   contents: write
 jobs:

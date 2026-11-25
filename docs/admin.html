@@ -28,6 +28,10 @@ small{color:#999}
  <h2>Subir un video (mp4 o webm, hasta 50 MB)</h2>
  <input type="file" id="file" accept="video/mp4,video/webm">
  <button id="up">Subir al canal</button>
+ <h2>⛔ Bloquear videos</h2>
+ <small>Si ves un video que no querés, pegá su link y no vuelve a salir.</small>
+ <textarea id="blk" placeholder="Un link por línea"></textarea>
+ <button id="blkBtn">Bloquear</button>
  <h2>Mis videos en el canal</h2>
  <div id="list">Cargando…</div>
  <p><button class="q" id="out">Salir</button></p>
@@ -44,8 +48,8 @@ async function gh(path,opt={}){
  return r}
 const dec=b=>decodeURIComponent(escape(atob(b.replace(/\n/g,""))));
 const enc=t=>btoa(unescape(encodeURIComponent(t)));
-async function getTxt(){const r=await gh("mis_videos.txt");if(r.status===404)return{text:"",sha:undefined};const j=await r.json();return{text:dec(j.content),sha:j.sha}}
-async function putTxt(text,sha,msg){await gh("mis_videos.txt",{method:"PUT",body:JSON.stringify({message:msg,content:enc(text),sha})})}
+async function getTxt(f="mis_videos.txt"){const r=await gh(f);if(r.status===404)return{text:"",sha:undefined};const j=await r.json();return{text:dec(j.content),sha:j.sha}}
+async function putTxt(text,sha,msg,f="mis_videos.txt"){await gh(f,{method:"PUT",body:JSON.stringify({message:msg,content:enc(text),sha})})}
 function ytId(l){const m=l.match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([\w-]{11})/)||l.match(/^([\w-]{11})$/);return m&&m[1]}
 async function refresh(){
  try{
@@ -68,6 +72,14 @@ $("addYt").onclick=async()=>{try{
  st("Agregando…");const {text,sha}=await getTxt();const ya=text.split("\n").map(x=>x.trim());
  let out=text.trim()?text.replace(/\s+$/,"")+"\n":"";nuevos.forEach(l=>{if(!ya.includes(l))out+=l+"\n"});
  await putTxt(out,sha,"panel: agregar videos");$("links").value="";st("Listo. En 2 o 3 minutos aparecen en el canal.");refresh()}catch(e){st("Error: "+e.message)}};
+$("blkBtn").onclick=async()=>{try{
+ const n=$("blk").value.split("\n").map(x=>x.trim()).filter(Boolean);
+ if(!n.length)return st("Pegá al menos un link.");
+ const m=n.filter(l=>!ytId(l));if(m.length)return st("Link no válido: "+m[0]);
+ st("Bloqueando…");const {text,sha}=await getTxt("bloqueados.txt");const ya=text.split("\n").map(x=>x.trim());
+ let out=text.trim()?text.replace(/\s+$/,"")+"\n":"";n.forEach(l=>{if(!ya.includes(l))out+=l+"\n"});
+ await putTxt(out,sha,"panel: bloquear videos","bloqueados.txt");$("blk").value="";st("Listo. En unos minutos deja de salir.")}catch(e){st("Error: "+e.message)}};
+{const h=location.hash.match(/block=([\w-]{11})/);if(h)$("blk").value="https://youtu.be/"+h[1]}
 $("up").onclick=async()=>{try{
  const f=$("file").files[0];if(!f)return st("Elegí un video primero.");
  if(f.size>50*1024*1024)return st("El video pesa más de 50 MB. Comprimilo o subilo a YouTube.");
