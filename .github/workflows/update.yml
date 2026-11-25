@@ -1,6 +1,6 @@
 name: Actualizar videos
 on:
-  schedule: [{cron: "0 */6 * * *"}]
+  schedule: [{cron: "0 */12 * * *"}]
   workflow_dispatch:
   push:
     paths: ["mis_videos.txt", "bloqueados.txt", "docs/videos/**"]
