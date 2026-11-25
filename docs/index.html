@@ -14,8 +14,20 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:syste
 #p{position:absolute;inset:0;width:100%;height:100%}
 #v{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000;display:none}
 #shield{position:absolute;inset:0;z-index:2}
+#top{position:absolute;top:10px;left:10px;right:170px;z-index:4;opacity:0;pointer-events:none;transition:opacity .2s}
+#top.show{opacity:1;pointer-events:auto}
+#q{width:100%;box-sizing:border-box;padding:9px 14px;border-radius:20px;border:0;font-size:15px;background:rgba(255,255,255,.92)}
+#ccl{display:block;color:#fff;font-size:12px;margin-top:4px;text-shadow:0 0 4px #000}
+#qm{color:#fff;font-size:13px;margin-top:4px;text-shadow:0 0 4px #000}
+#chips{display:flex;gap:6px;overflow-x:auto;margin-top:8px;scrollbar-width:none}
+.chip{flex:none;padding:6px 14px;border-radius:20px;border:0;background:rgba(0,0,0,.7);color:#fff;font-size:14px}
+.chip.on{background:#b8860b}
+#bar{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:4;display:flex;gap:10px;opacity:0;pointer-events:none;transition:opacity .2s}
+#bar.show{opacity:1;pointer-events:auto}
+#bar button{font-size:22px;padding:8px 16px;border:0;border-radius:30px;background:rgba(0,0,0,.7);color:#fff;cursor:pointer}
+#bar #bLive{font-size:14px;font-weight:700}
 #logo{position:absolute;top:12px;right:16px;width:clamp(70px,10vw,140px);z-index:3;opacity:.85;pointer-events:none;display:none}
-#live{position:absolute;bottom:14px;left:16px;z-index:3;color:#fff;font-weight:700;font-size:13px;background:#c4161c;padding:3px 9px;border-radius:4px;display:none}
+#live{cursor:pointer;position:absolute;bottom:14px;left:16px;z-index:3;color:#fff;font-weight:700;font-size:13px;background:#c4161c;padding:3px 9px;border-radius:4px;display:none}
 #splash{position:absolute;inset:0;z-index:5;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px}
 #splash img{max-width:70vw;max-height:55vh}
 #go{font-size:20px;font-weight:700;padding:14px 38px;border:0;border-radius:40px;background:#b8860b;color:#fff;cursor:pointer}
@@ -23,40 +35,76 @@ html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:syste
 </style></head><body>
 <div id="splash"><img src="splash.jpg" alt="TTDE Entertainment TV"><button id="go">▶ ENTRAR AL CANAL</button><div id="msg">Cargando programación…</div></div>
 <div id="stage"><div id="p"></div><video id="v" playsinline></video><div id="shield"></div>
-<img id="logo" src="logo.png" alt=""><div id="live">● EN VIVO</div></div>
+<img id="logo" src="logo.png" alt=""><div id="live">● EN VIVO</div>
+<div id="top"><input id="q" placeholder="🔎 Buscar: estudiar, relax, reggaeton…" enterkeyhint="search"><label id="ccl"><input type="checkbox" id="cc"> Solo licencia libre (menos anuncios)</label><div id="qm"></div><div id="chips"></div></div>
+<div id="bar"><button id="bPrev">⏮</button><button id="bPlay">⏸</button><button id="bNext">⏭</button><button id="bMute">🔊</button><button id="bBlock">⛔</button><button id="bLive">VOLVER AL VIVO</button></div></div>
 <script>
 const FEED="https://raw.githubusercontent.com/ttde-entertainment-TV/ttde-tv/main/assets/videos.json";
-let items=[],bad=new Set(),player=null,started=false,ready=false,lastSync=0,stuck=0,hid=0;
+const YT_KEY="PEGAR_CLAVE";
+let extra=null,all=[],chans=[],cur="todo",items=[],bad=new Set(),player=null,started=false,ready=false,lastSync=0,stuck=0,hid=0,shift=0,paused=false,muted=false,barT=null;
 const $=id=>document.getElementById(id);
 function key(v){return v.id||v.src}
 function list(){return items.filter(v=>!bad.has(key(v)))}
 function at(now){const L=list(),tot=L.reduce((s,v)=>s+v.d,0);let t=(now/1000)%tot;
- for(let i=0;i<L.length;i++){if(t<L[i].d)return{v:L[i],off:Math.floor(t)};t-=L[i].d}return{v:L[0],off:0}}
+ for(let i=0;i<L.length;i++){if(t<L[i].d)return{v:L[i],i:i,off:Math.floor(t)};t-=L[i].d}return{v:L[0],i:0,off:0}}
 async function load(){
  try{const r=await fetch(FEED+"?t="+Math.floor(Date.now()/600000));const j=await r.json();
-  if(j.items&&j.items.length){const old=JSON.stringify(items);items=j.items;
+  if(j.items&&j.items.length){const old=JSON.stringify(items);all=j.items;chans=j.channels||[];items=active();renderChips();
    $("msg").textContent="Listo";$("go").style.display="inline-block";
    if(started&&JSON.stringify(items)!==old)sync()}
   else $("msg").textContent="La programación aún no está disponible"}
  catch(e){$("msg").textContent="Sin conexión, reintentando…";setTimeout(load,15000)}}
-function sync(){if(!ready||!list().length)return;const a=at(Date.now());lastSync=Date.now();const V=$("v");
+function active(){if(cur==="busqueda"&&extra)return extra.items;if(cur!=="todo"){const c=chans.find(x=>x.id===cur);if(c&&c.items.length)return c.items}cur="todo";return all}
+function norm(s){return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim()}
+function renderChips(){const box=$("chips");box.innerHTML="";[{id:"todo",name:"Todo"}].concat(chans).concat(extra?[{id:"busqueda",name:"🔎 "+extra.name}]:[]).forEach(c=>{const b=document.createElement("button");b.className="chip"+(c.id===cur?" on":"");b.textContent=c.name;b.onclick=()=>{setChan(c.id);$("qm").textContent=c.id==="todo"?"":"Mostrando: "+c.name};box.appendChild(b)})}
+function setChan(id){cur=id;items=active();shift=0;paused=false;$("bPlay").textContent="⏸";badge();renderChips();sync();showBar()}
+function doSearch(){const q=norm($("q").value);
+ if(!q||["musica","todo","todos","videos","canal"].includes(q)){setChan("todo");$("qm").textContent="";return}
+ const c=chans.find(c=>norm(c.name).includes(q)||c.kw.some(k=>norm(k).includes(q)||q.includes(norm(k))));
+ if(c){setChan(c.id);$("qm").textContent="Mostrando: "+c.name}
+ else freeSearch($("q").value.trim())}
+const BADRX=/maltrat|abus|gore|muert|asesin|accident|pelea|violen|tortur|crimen|sangre|suicid|porn|sexo|desnud|xxx|cruel|masacre|ataque|disparo|cadaver|tragedia|brutal/i;
+function isoSec(s){const m=s.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);return(+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0)}
+function showFree(raw,its){extra={name:raw,items:its};setChan("busqueda");$("qm").textContent="Resultados para: "+raw}
+async function freeSearch(raw){const qm=$("qm");
+ if(YT_KEY==="PEGAR_CLAVE"){qm.textContent="No tengo ese tema. Deslizá los botones de arriba para ver todos.";return}
+ const cc=$("cc").checked,ck="s:"+(cc?1:0)+":"+norm(raw);
+ try{const c=JSON.parse(localStorage.getItem(ck)||"null");if(c&&Date.now()-c.t<216e5)return showFree(raw,c.items)}catch(x){}
+ qm.textContent="Buscando…";
+ try{
+  const p=new URLSearchParams({part:"id",type:"video",q:raw,videoEmbeddable:"true",safeSearch:"strict",order:"viewCount",maxResults:"25",videoCategoryId:"10",relevanceLanguage:"es",key:YT_KEY});
+  if(cc)p.set("videoLicense","creativeCommon");
+  const j=await(await fetch("https://www.googleapis.com/youtube/v3/search?"+p)).json();
+  if(j.error){qm.textContent=(j.error.errors&&j.error.errors[0].reason==="quotaExceeded")?"Hoy se agotaron las búsquedas libres. Probá uno de los temas.":"No pude buscar ahora.";return}
+  const ids=(j.items||[]).map(x=>x.id.videoId);
+  if(!ids.length){qm.textContent="No encontré videos de música para eso.";return}
+  const d=await(await fetch("https://www.googleapis.com/youtube/v3/videos?"+new URLSearchParams({part:"contentDetails,status,snippet",id:ids.join(","),key:YT_KEY}))).json();
+  const its=(d.items||[]).filter(v=>v.status.embeddable&&!BADRX.test(v.snippet.title+" "+v.snippet.channelTitle)).map(v=>({id:v.id,d:isoSec(v.contentDetails.duration)})).filter(v=>v.d>=60&&v.d<=10800);
+  if(!its.length){qm.textContent="No encontré videos para eso.";return}
+  try{localStorage.setItem(ck,JSON.stringify({t:Date.now(),items:its}))}catch(x){}
+  showFree(raw,its)
+ }catch(e){qm.textContent="No pude buscar ahora."}}
+$("q").addEventListener("keydown",e=>{if(e.key==="Enter"){doSearch();$("q").blur()}});
+function nowT(){return Date.now()+shift}
+function sync(){if(!ready||paused||!list().length)return;const a=at(nowT());lastSync=Date.now();const V=$("v");
  if(a.v.src){try{player.pauseVideo()}catch(x){}$("p").style.display="none";V.style.display="block";
-  if(!V.src.endsWith(a.v.src))V.src=a.v.src;V.currentTime=a.off;V.muted=false;V.play().catch(()=>{})}
+  if(!V.src.endsWith(a.v.src))V.src=a.v.src;V.currentTime=a.off;V.muted=muted;V.play().catch(()=>{})}
  else{V.pause();V.style.display="none";$("p").style.display="block";
-  player.loadVideoById({videoId:a.v.id,startSeconds:a.off});player.unMute&&player.unMute()}}
+  player.loadVideoById({videoId:a.v.id,startSeconds:a.off});muted?player.mute():player.unMute()}}
 $("v").onended=()=>sync();
 $("v").onerror=()=>{const c=items.find(v=>v.src&&$("v").src.endsWith(v.src));if(c)bad.add(key(c));sync()};
 function onYouTubeIframeAPIReady(){window.apiOK=true}
 $("go").style.display="none";
 $("go").onclick=()=>{ if(!window.YT||!YT.Player||!items.length)return;
- started=true;goFull();keepAwake();$("splash").style.display="none";$("logo").style.display="block";$("live").style.display="block";
+ started=true;goFull();keepAwake();showBar();$("splash").style.display="none";$("logo").style.display="block";$("live").style.display="block";
  player=new YT.Player("p",{width:"100%",height:"100%",playerVars:{autoplay:1,controls:0,disablekb:1,rel:0,playsinline:1,fs:0,iv_load_policy:3,modestbranding:1},
   events:{onReady:()=>{ready=true;sync()},
-   onStateChange:e=>{if(e.data===0&&Date.now()-lastSync>3000)sync();if(e.data===2)player.playVideo()},
+   onStateChange:e=>{if(e.data===0&&Date.now()-lastSync>3000)sync();if(e.data===2&&!paused)player.playVideo()},
    onError:()=>{const id=player.getVideoData().video_id;if(id)bad.add(id);sync()}}})};
-setInterval(()=>{if(!ready||!list().length)return;
- const a=at(Date.now()),V=$("v");
+setInterval(()=>{if(!ready||paused||!list().length)return;
+ const a=at(nowT()),V=$("v");
  if(a.v.src){if(Date.now()-lastSync>8000&&(!V.src.endsWith(a.v.src)||Math.abs(V.currentTime-a.off)>6||V.paused))sync();return}
+ /* YouTube: sin correccion de tiempo (con anuncios provocaba recargas). Solo se reinicia si se traba mucho. */
  let st=-2;try{st=player.getPlayerState()}catch(x){}
  if(st===-1||st===3||st===5)stuck++;else stuck=0;
  if(stuck>=8&&Date.now()-lastSync>60000){stuck=0;sync()}},5000);
@@ -64,6 +112,16 @@ function goFull(){try{const e=document.documentElement;if(e.requestFullscreen)e.
 let wl=null;async function keepAwake(){try{if(navigator.wakeLock)wl=await navigator.wakeLock.request("screen")}catch(x){}}
 if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 document.addEventListener("visibilitychange",()=>{if(document.hidden){hid=Date.now()}else{keepAwake();if(Date.now()-hid>30000)sync()}});
+function showBar(){["bar","top"].forEach(i=>$(i).classList.add("show"));clearTimeout(barT);barT=setTimeout(()=>{if(document.activeElement!==$("q"))["bar","top"].forEach(i=>$(i).classList.remove("show"))},5000)}
+function badge(){const l=$("live");l.textContent=shift?"◐ DIFERIDO · tocá para volver al vivo":"● EN VIVO";l.style.background=shift?"#555":"#c4161c"}
+$("shield").onclick=()=>{if(started)showBar()};
+$("bPlay").onclick=()=>{if(!ready)return;if(paused){paused=false;$("bPlay").textContent="⏸";sync()}else{paused=true;$("bPlay").textContent="▶";try{player.pauseVideo()}catch(x){}$("v").pause()}showBar()};
+$("bPrev").onclick=()=>{if(!ready)return;paused=false;$("bPlay").textContent="⏸";const L=list(),a=at(nowT()),p=L[(a.i-1+L.length)%L.length];shift-=(a.off+p.d)*1000;badge();sync();showBar()};
+$("bNext").onclick=()=>{if(!ready)return;paused=false;$("bPlay").textContent="⏸";const a=at(nowT());shift+=(a.v.d-a.off)*1000+500;badge();sync();showBar()};
+$("bMute").onclick=()=>{muted=!muted;$("bMute").textContent=muted?"🔇":"🔊";try{muted?player.mute():player.unMute()}catch(x){}$("v").muted=muted;showBar()};
+$("bBlock").onclick=()=>{const id=at(nowT()).v.id;if(id)window.open("admin.html#block="+id,"_blank");showBar()};
+function goLive(){shift=0;paused=false;$("bPlay").textContent="⏸";badge();sync();showBar()}
+$("bLive").onclick=goLive;$("live").onclick=goLive;
 setInterval(load,3600000);load();
 </script>
 <script src="https://www.youtube.com/iframe_api"></script>
